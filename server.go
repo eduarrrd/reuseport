@@ -12,6 +12,7 @@ import (
 
 var addr = flag.String("addr", ":9999", "address to listen on")
 var listeners = flag.Int("listeners", 2, "number of simultaneous connections")
+var listenForever = flag.Bool("listen_forever", true, "resume listening after connection termination")
 
 func reusePort(network, address string, conn sc.RawConn) error {
 	return conn.Control(func(fd uintptr) {
@@ -24,22 +25,29 @@ func listen(id int, listener net.Listener, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer listener.Close()
 
-	socket, err := listener.Accept()
-	if err != nil {
-		log.Fatalf("Listener %v: Error accepting: %v", id, err)
-	}
-	defer socket.Close()
-
-	log.Println("Accepted socket from listener", id)
-	buf := make([]byte, 2<<10)
-	for {
-		n, err := io.ReadAtLeast(socket, buf, 1)
+	for *listenForever {
+		socket, err := listener.Accept()
 		if err != nil {
-			log.Printf("Listener %v: error: %v", id, err)
-			break
+			log.Fatalf("Listener %v: Error accepting: %v", id, err)
 		}
-		log.Printf("Listener %v read %v bytes: %q", id, n, buf[:n])
+		defer socket.Close()
+
+		log.Println("Accepted socket from listener", id)
+		buf := make([]byte, 2<<10)
+		for {
+			n, err := io.ReadAtLeast(socket, buf, 1)
+			if err == io.EOF {
+				log.Printf("Listener %v: connection terminated", id)
+				break
+			}
+			if err != nil {
+				log.Printf("Listener %v: error: %v", id, err)
+				goto exit
+			}
+			log.Printf("Listener %v read %v bytes: %q", id, n, buf[:n])
+		}
 	}
+exit:
 	log.Printf("Listener %v terminating", id)
 }
 
