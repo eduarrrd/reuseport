@@ -1,0 +1,48 @@
+
+#!/usr/bin/env bpftrace
+
+// Not including headers, assuming CONFIG_DEBUG_INFO_BTF=y
+
+//BEGIN
+//{
+//    printf("Tracing SO_REUSEPORT usage. Hit Ctrl-C to end.\n");
+//}
+
+kprobe:reuseport_select_sock
+{
+  $sk = ((struct sock *) arg0);
+  $hash = arg1;
+  $skb = (struct sk_buff *) arg2;
+  $hdr_len = arg3;
+  printf("reuseport_select_sock(%p, %x, %p, %d):\n", $sk, $hash, $skb, $hdr_len);
+
+  // assumes v4
+  $af = $sk->__sk_common.skc_family;
+  $daddr = ntop($af, $sk->__sk_common.skc_daddr);
+  $saddr = ntop($af, $sk->__sk_common.skc_rcv_saddr);
+  $sport = $sk->__sk_common.skc_num;
+  $dport = $sk->__sk_common.skc_dport;
+  $dport = ($dport >> 8) | (($dport << 8) & 0xff00);
+  // net/tcp_states.h
+  printf("  socket info: dst: [%s]:%d, src: [%s]:%d, state: %d\n", $daddr, $dport, $saddr, $sport, $sk->__sk_common.skc_state);
+
+  $reuseport = $sk->sk_reuseport_cb;
+  printf("  reuseport id %u: %d/%d sockets, prog @ %p \n", $reuseport->reuseport_id, $reuseport->num_socks, $reuseport->max_socks, $reuseport->prog);
+
+  $socks = (struct sock **) $reuseport->socks;
+  $i = 0;
+  // Using $reuseport->num_socks as loop condition instead exhausts buffers.
+  // TODO: Why? Are preallocating for $reuseport->max_socks ?
+  while ($i < 10) {
+    $sks = (struct sock **) ($socks + $i*8);
+    $sk = (struct sock * ) *$sks;
+
+    printf("    socket %hu: sk: %p, state: %d \n", $i, $sk, $sk->__sk_common.skc_state);
+
+    $i++;
+  }
+}
+
+kretprobe:reuseport_select_sock {
+    printf("Selected socket: %p\n\n", retval);
+} 
