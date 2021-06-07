@@ -8,6 +8,22 @@
 //    printf("Tracing SO_REUSEPORT usage. Hit Ctrl-C to end.\n");
 //}
 
+kprobe:bpf_run_sk_reuseport
+{
+  $reuse = (struct sock_reuseport *) arg0;
+  $sk = (struct sock *) arg1;
+	$prog = (struct bpf_prog *) arg2;
+  $skb = (struct sk_buff *) arg3;
+	$hash = arg4;
+
+  printf("Running bpf_run_sk_reuseport(_, _, prog = %p, _, _): ", $prog);
+}
+
+kretprobe:bpf_run_sk_reuseport
+{ // con't line from kprobe:bpf_run_sk_reuseport
+  printf("%p\n", retval);
+}
+
 kprobe:reuseport_select_sock
 {
   $sk = ((struct sock *) arg0);
