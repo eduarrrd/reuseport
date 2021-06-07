@@ -25,6 +25,16 @@ bpf_helper_defs = custom_target(
     capture : true
 )
 
+# Requires bpftool from ${kernel}/tools/bpf/bpftool and
+# kconfig option CONFIG_DEBUG_INFO_BTF
+vmlinux = custom_target(
+    'vmlinux.h',
+    output : 'vmlinux.h',
+    input : '/sys/kernel/btf/vmlinux',
+    command : ['/usr/src/linux/tools/bpf/bpftool/bpftool', 'btf', 'dump', 'file', '@INPUT@', 'format', 'c'],
+    capture : true
+)
+
 libbpf_dep = dependency('libbpf')
 bpf_args = [
     '-g',  # BTF instrumentation
