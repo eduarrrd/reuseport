@@ -1,0 +1,7 @@
+#!/usr/bin/env bpftrace
+
+tracepoint:sock:inet_sock_set_state
+{
+    printf("%s, %9s:%-5d -> %9s:%-5d => %d->%d\n", comm, ntop(2, args->saddr), args->sport, ntop(2, args->daddr), args->dport, args->oldstate, args->newstate);
+    print(kstack);
+}
