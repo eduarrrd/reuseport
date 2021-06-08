@@ -49,3 +49,7 @@ bpf_args = [
 # sockex1 from samples/bpf
 static_library('sockex1_kern', ['sockex1_kern.c', bpf_helper_defs], include_directories : incdir, c_args : bpf_args)
 executable('sockex1_user', 'sockex1_user.c', dependencies : libbpf_dep)
+
+# reuseport
+static_library('reuseport', ['reuseport_kern.c', vmlinux], include_directories : incdir, c_args : bpf_args)
+executable('reuseport', 'reuseport_user.c', dependencies : libbpf_dep)
