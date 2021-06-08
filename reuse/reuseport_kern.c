@@ -21,6 +21,13 @@ struct {
   __uint(max_entries, 1);
 } nonce SEC(".maps");
 
+struct {
+  __uint(type, BPF_MAP_TYPE_REUSEPORT_SOCKARRAY);
+  __type(key, u32);
+  __type(value, u64);
+  __uint(max_entries, BALANCER_COUNT);
+} tcp_balancing_targets SEC(".maps");
+
 // HASHING
 
 #define __jhash_final(a, b, c)                                                 \

@@ -12,6 +12,10 @@
 #include <linux/unistd.h>
 #include <stdlib.h>
 
+#ifndef BALANCER_COUNT
+#define BALANCER_COUNT 2
+#endif
+
 static inline int open_sock() {
   struct sockaddr_in sa;
   int sock;
@@ -44,12 +48,15 @@ static inline int open_sock() {
 
 int main(int ac, char **argv) {
   struct bpf_object *obj;
-  int prog_fd;
+  int map_fd, prog_fd;
   char filename[] = "libreuseport.a.p/reuseport_kern.c.o";
   int64_t sock;
 
   if (bpf_prog_load(filename, BPF_PROG_TYPE_SK_REUSEPORT, &obj, &prog_fd))
     return 1;
+
+  map_fd = bpf_object__find_map_fd_by_name(obj, "tcp_balancing_targets");
+  assert(map_fd >= 0);
 
   sock = open_sock();
   assert(sock >= 0);
@@ -61,7 +68,29 @@ int main(int ac, char **argv) {
     return 1;
   }
 
+  uint32_t key = 0;
+  printf("sockfd: %ld\n", sock);
+  if (bpf_map_update_elem(map_fd, &key, &sock, BPF_ANY) != 0) {
+    perror("Could not update reuseport");
+    return 1;
+  }
+
+  uint64_t res;
+  if (bpf_map_lookup_elem(map_fd, &key, &res) != 0) {
+    perror("Could not find own entry in REUSEPORT Array");
+  }
+
   while (true) {
+    uint32_t val;
+    for (int i = 0; i < BALANCER_COUNT; i++) {
+      if (bpf_map_lookup_elem(map_fd, &i, &val) == 0) {
+        printf("%i: %i, ", i, val);
+      } else {
+        printf("%i: X, ", i);
+      }
+    }
+    puts("");
+
     struct sockaddr_in saddr;
     socklen_t len = sizeof(struct sockaddr_in);
     int s = accept(sock, &saddr, &len);
