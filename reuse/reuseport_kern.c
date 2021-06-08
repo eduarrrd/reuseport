@@ -12,6 +12,7 @@
 SEC("selector")
 enum sk_action _selector(struct sk_reuseport_md *reuse) {
   struct tcphdr *tcp;
+  struct iphdr ip;
 
   if (reuse->ip_protocol != IPPROTO_TCP) {
     bpf_printk(LOC "IPPROTO=%d\n", reuse->ip_protocol);
@@ -25,6 +26,11 @@ enum sk_action _selector(struct sk_reuseport_md *reuse) {
   bpf_printk(LOC "src: %d, dest: %d", __builtin_bswap16(tcp->source),
              __builtin_bswap16(tcp->dest));
 
+  bpf_skb_load_bytes_relative(reuse, 0, &ip, sizeof(struct iphdr),
+                              (u32)BPF_HDR_START_NET);
+  bpf_printk(LOC "src: %d, dest: %d", __builtin_bswap32(ip.saddr),
+             __builtin_bswap32(ip.daddr));
+  
   return SK_PASS;
 }
 
