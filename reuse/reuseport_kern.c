@@ -85,6 +85,7 @@ static inline u32 hash(u32 ip) {
 // TODO: Handle UDP
 SEC("selector")
 enum sk_action _selector(struct sk_reuseport_md *reuse) {
+  enum sk_action action;
   struct tcphdr *tcp;
   struct iphdr ip;
   u32 key;
@@ -107,7 +108,16 @@ enum sk_action _selector(struct sk_reuseport_md *reuse) {
   bpf_printk(LOC "src: %d, dest: %d, key: %d", __builtin_bswap32(ip.saddr),
              __builtin_bswap32(ip.daddr), key);
 
-  return SK_PASS;
+  // side-effect sets dst socket if found
+  if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &key, 0) == 0) {
+    action = SK_PASS;
+    bpf_printk(LOC "=> action: pass");
+  } else {
+    action = SK_DROP;
+    bpf_printk(LOC "=> action: drop");
+  }
+
+  return action;
 }
 
 char _license[] SEC("license") = "GPL";
