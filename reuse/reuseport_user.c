@@ -46,11 +46,18 @@ static inline int open_sock() {
   return sock;
 }
 
-int main(int ac, char **argv) {
+int main(int argc, char **argv) {
   struct bpf_object *obj;
   int map_fd, prog_fd;
   char filename[] = "libreuseport.a.p/reuseport_kern.c.o";
   int64_t sock;
+
+  // 0-based index into reuseport array (i.e hash bucket) as the only arg
+  // range: [0, BALANCER_COUNT)
+  uint32_t key = 0;
+  if (argc > 1) {
+    key = atoi(argv[1]);
+  }
 
   if (bpf_prog_load(filename, BPF_PROG_TYPE_SK_REUSEPORT, &obj, &prog_fd))
     return 1;
@@ -68,10 +75,9 @@ int main(int ac, char **argv) {
     return 1;
   }
 
-  uint32_t key = 0;
   printf("sockfd: %ld\n", sock);
   if (bpf_map_update_elem(map_fd, &key, &sock, BPF_ANY) != 0) {
-    perror("Could not update reuseport");
+    perror("Could not update reuseport array");
     return 1;
   }
 
