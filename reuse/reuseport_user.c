@@ -16,6 +16,9 @@
 #define BALANCER_COUNT 2
 #endif
 
+const char NONCE_PATH[] = "/sys/fs/bpf/nonce";
+const char TCP_MAP_PATH[] = "/sys/fs/bpf/tcpmap";
+
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
 	return level <= LIBBPF_DEBUG ? vfprintf(stderr, format, args) : 0;
@@ -74,13 +77,21 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  struct bpf_map *nonce = bpf_object__find_map_by_name(obj, "nonce");
+  assert(nonce);
+  assert(bpf_map__set_pin_path(nonce, NONCE_PATH) == 0);
+
+  struct bpf_map *tcpmap = bpf_object__find_map_by_name(obj, "tcp_balancing_targets");
+  assert(tcpmap);
+  assert(bpf_map__set_pin_path(tcpmap, TCP_MAP_PATH) == 0);
+
   if (bpf_object__load(obj) != 0) {
     perror("Error loading BPF object into kernel");
     return 1;
   }
 
-  map_fd = bpf_object__find_map_fd_by_name(obj, "tcp_balancing_targets");
-  assert(map_fd >= 0);
+  map_fd = bpf_map__fd(tcpmap);
+  assert(map_fd);
 
   struct bpf_program *prog = bpf_object__find_program_by_name(obj, "_selector");
   if (!prog) {
