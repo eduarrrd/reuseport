@@ -21,6 +21,7 @@ kh_tools = include_directories(
 )
 
 prog_python = import('python').find_installation('python3')
+prog_bpftool = find_program('bpftool', khp / 'tools/bpf/bpftool/bpftool')
 
 # bpf_helper_defs.h used to be bundled until 5.12
 bpf_helper_defs = custom_target(
@@ -37,7 +38,7 @@ vmlinux = custom_target(
     'vmlinux.h',
     output : 'vmlinux.h',
     input : '/sys/kernel/btf/vmlinux',
-    command : [khp / 'tools/bpf/bpftool/bpftool', 'btf', 'dump', 'file', '@INPUT@', 'format', 'c'],
+    command : [prog_bpftool, 'btf', 'dump', 'file', '@INPUT@', 'format', 'c'],
     capture : true
 )
 
