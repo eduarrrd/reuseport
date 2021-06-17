@@ -12,6 +12,9 @@ kh = include_directories(
     khp / 'tools/include',
     khp / 'tools/testing/selftests/bpf',
     khp / 'tools/lib',
+)
+
+kh_tools = include_directories(
     khp / 'tools/include',
     khp / 'tools/testing/selftests/bpf',
     khp / 'tools/lib',
@@ -50,7 +53,8 @@ bpf_args = [
 ]
 
 # sockex1 from samples/bpf
-static_library('sockex1_kern', ['sockex1_kern.c', bpf_helper_defs], include_directories : kh, c_args : bpf_args)
+static_library('sockex1_kern', ['sockex1_kern.c', bpf_helper_defs], include_directories : [kh, kh_tools], c_args : bpf_args)
+executable('sockex1_user', 'sockex1_user.c', dependencies : libbpf_dep, build_by_default : false)
 
 # reuseport
 static_library('reuseport', ['reuseport_kern.c', vmlinux], include_directories : kh, c_args : bpf_args)
