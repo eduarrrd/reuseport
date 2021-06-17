@@ -83,7 +83,7 @@ static inline u32 hash(u32 ip) {
 // CORE LOGIC
 
 // TODO: Handle UDP
-SEC("selector")
+SEC("sk_reuseport/selector")
 enum sk_action _selector(struct sk_reuseport_md *reuse) {
   enum sk_action action;
   struct tcphdr *tcp;

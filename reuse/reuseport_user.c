@@ -56,6 +56,7 @@ int main(int argc, char **argv) {
   int map_fd, prog_fd;
   char filename[] = "libreuseport.a.p/reuseport_kern.c.o";
   int64_t sock;
+  long err = 0;
 
   // 0-based index into reuseport array (i.e hash bucket) as the only arg
   // range: [0, BALANCER_COUNT)
@@ -66,11 +67,29 @@ int main(int argc, char **argv) {
 
 	libbpf_set_print(libbpf_print_fn);
 
-  if (bpf_prog_load(filename, BPF_PROG_TYPE_SK_REUSEPORT, &obj, &prog_fd))
+  obj = bpf_object__open_file(filename, NULL);
+  err = libbpf_get_error(obj);
+  if (err) {
+    perror("Failed to open BPF elf file");
     return 1;
+  }
+
+  if (bpf_object__load(obj) != 0) {
+    perror("Error loading BPF object into kernel");
+    return 1;
+  }
 
   map_fd = bpf_object__find_map_fd_by_name(obj, "tcp_balancing_targets");
   assert(map_fd >= 0);
+
+  struct bpf_program *prog = bpf_object__find_program_by_name(obj, "_selector");
+  if (!prog) {
+    perror("Could not find BPF program in BPF object");
+    return 1;
+  }
+
+  prog_fd = bpf_program__fd(prog);
+  assert(prog_fd);
 
   sock = open_sock();
   assert(sock >= 0);
