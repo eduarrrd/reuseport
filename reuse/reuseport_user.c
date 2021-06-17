@@ -16,6 +16,11 @@
 #define BALANCER_COUNT 2
 #endif
 
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
+{
+	return level <= LIBBPF_DEBUG ? vfprintf(stderr, format, args) : 0;
+}
+
 static inline int open_sock() {
   struct sockaddr_in sa;
   int sock;
@@ -58,6 +63,8 @@ int main(int argc, char **argv) {
   if (argc > 1) {
     key = atoi(argv[1]);
   }
+
+	libbpf_set_print(libbpf_print_fn);
 
   if (bpf_prog_load(filename, BPF_PROG_TYPE_SK_REUSEPORT, &obj, &prog_fd))
     return 1;
