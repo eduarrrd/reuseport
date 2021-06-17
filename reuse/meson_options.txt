@@ -1,0 +1,1 @@
+option('kheader_prefix', type : 'string', value : '/usr/src/linux', description : 'Location of kernel headers')

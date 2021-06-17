@@ -1,17 +1,20 @@
 project('bpf', 'c')
 
-# TODO: make /usr/src/linux prefix configurable
-incdir = include_directories(
-    '/usr/src/linux/arch/x86/include',
-    '/usr/src/linux/arch/x86/include/generated',
-    '/usr/src/linux/include',
-    '/usr/src/linux/arch/x86/include/uapi',
-    '/usr/src/linux/arch/x86/include/generated/uapi',
-    '/usr/src/linux/include/uapi',
-    '/usr/src/linux/include/generated/uapi',
-    '/usr/src/linux/tools/include',
-    '/usr/src/linux/tools/testing/selftests/bpf',
-    '/usr/src/linux/tools/lib',
+khp = get_option('kheader_prefix')
+kh = include_directories(
+    khp / 'arch/x86/include',
+    khp / 'arch/x86/include/generated',
+    khp / 'include',
+    khp / 'arch/x86/include/uapi',
+    khp / 'arch/x86/include/generated/uapi',
+    khp / 'include/uapi',
+    khp / 'include/generated/uapi',
+    khp / 'tools/include',
+    khp / 'tools/testing/selftests/bpf',
+    khp / 'tools/lib',
+    khp / 'tools/include',
+    khp / 'tools/testing/selftests/bpf',
+    khp / 'tools/lib',
 )
 
 prog_python = import('python').find_installation('python3')
@@ -20,7 +23,7 @@ prog_python = import('python').find_installation('python3')
 bpf_helper_defs = custom_target(
     'bpf_helper_defs.h',
     output : 'bpf_helper_defs.h',
-    input : '/usr/src/linux/scripts/bpf_helpers_doc.py',
+    input : khp / 'scripts/bpf_helpers_doc.py',
     command : [prog_python, '@INPUT@', '--header'],
     capture : true
 )
@@ -31,7 +34,7 @@ vmlinux = custom_target(
     'vmlinux.h',
     output : 'vmlinux.h',
     input : '/sys/kernel/btf/vmlinux',
-    command : ['/usr/src/linux/tools/bpf/bpftool/bpftool', 'btf', 'dump', 'file', '@INPUT@', 'format', 'c'],
+    command : [khp / 'tools/bpf/bpftool/bpftool', 'btf', 'dump', 'file', '@INPUT@', 'format', 'c'],
     capture : true
 )
 
@@ -47,9 +50,8 @@ bpf_args = [
 ]
 
 # sockex1 from samples/bpf
-static_library('sockex1_kern', ['sockex1_kern.c', bpf_helper_defs], include_directories : incdir, c_args : bpf_args)
-executable('sockex1_user', 'sockex1_user.c', dependencies : libbpf_dep)
+static_library('sockex1_kern', ['sockex1_kern.c', bpf_helper_defs], include_directories : kh, c_args : bpf_args)
 
 # reuseport
-static_library('reuseport', ['reuseport_kern.c', vmlinux], include_directories : incdir, c_args : bpf_args)
+static_library('reuseport', ['reuseport_kern.c', vmlinux], include_directories : kh, c_args : bpf_args)
 executable('reuseport', 'reuseport_user.c', dependencies : libbpf_dep)
