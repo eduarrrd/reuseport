@@ -28,6 +28,13 @@ struct {
   __uint(max_entries, BALANCER_COUNT);
 } tcp_balancing_targets SEC(".maps");
 
+struct {
+  __uint(type, BPF_MAP_TYPE_REUSEPORT_SOCKARRAY);
+  __type(key, u32);
+  __type(value, u64);
+  __uint(max_entries, BALANCER_COUNT);
+} udp_balancing_targets SEC(".maps");
+
 // HASHING
 
 #define __jhash_final(a, b, c)                                                 \
@@ -82,26 +89,35 @@ static inline u32 hash(u32 ip) {
 
 // CORE LOGIC
 
-// TODO: Handle UDP
 SEC("sk_reuseport/selector")
 enum sk_action _selector(struct sk_reuseport_md *reuse) {
   enum sk_action action;
-  struct tcphdr *tcp;
   struct iphdr ip;
   u32 key;
 
-  if (reuse->ip_protocol != IPPROTO_TCP) {
-    bpf_printk(LOC "IPPROTO=%d\n", reuse->ip_protocol);
-    return SK_DROP;
+  void *targets;
+
+  switch (reuse->ip_protocol) {
+    case IPPROTO_TCP:
+      targets = &tcp_balancing_targets;
+      break;
+    case IPPROTO_UDP:
+      targets = &udp_balancing_targets;
+      break;
+    default:
+      bpf_printk(LOC "Unsupported IPPROTO=%d\n", reuse->ip_protocol);
+      return SK_DROP;
   }
 
+#if 0
+  struct tcphdr *tcp;
   tcp = reuse->data;
   if (tcp + 1 > reuse->data_end)
     return SK_DROP;
 
   bpf_printk(LOC "src: %d, dest: %d", __builtin_bswap16(tcp->source),
              __builtin_bswap16(tcp->dest));
-
+#endif
   bpf_skb_load_bytes_relative(reuse, 0, &ip, sizeof(struct iphdr),
                               (u32)BPF_HDR_START_NET);
   key = hash(__builtin_bswap32(ip.saddr)) % BALANCER_COUNT;
@@ -109,7 +125,7 @@ enum sk_action _selector(struct sk_reuseport_md *reuse) {
              __builtin_bswap32(ip.daddr), key);
 
   // side-effect sets dst socket if found
-  if (bpf_sk_select_reuseport(reuse, &tcp_balancing_targets, &key, 0) == 0) {
+  if (bpf_sk_select_reuseport(reuse, targets, &key, 0) == 0) {
     action = SK_PASS;
     bpf_printk(LOC "=> action: pass");
   } else {

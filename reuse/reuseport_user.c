@@ -19,18 +19,19 @@
 
 const char NONCE_PATH[] = "/sys/fs/bpf/nonce";
 const char TCP_MAP_PATH[] = "/sys/fs/bpf/tcpmap";
+const char UDP_MAP_PATH[] = "/sys/fs/bpf/udpmap";
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
 	return level <= LIBBPF_DEBUG ? vfprintf(stderr, format, args) : 0;
 }
 
-static inline int open_sock() {
+static inline int open_sock(int type) {
   struct sockaddr_in sa;
   int sock;
 
   // SOCK_NONBLOCK for syncronous output in main loop
-  sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  sock = socket(AF_INET, type | SOCK_NONBLOCK, 0);
   if (sock < 0) {
     printf("cannot create tcp socket\n");
     return -1;
@@ -56,10 +57,9 @@ static inline int open_sock() {
 }
 
 int main(int argc, char **argv) {
-  struct bpf_object *obj;
-  int map_fd, prog_fd;
+  int tmap_fd, umap_fd, prog_fd;
   char filename[] = "libreuseport.a.p/reuseport_kern.c.o";
-  int64_t sock;
+  int64_t tsock, usock;
   long err = 0;
 
   // 0-based index into reuseport array (i.e hash bucket) as the only arg
@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
 
 	libbpf_set_print(libbpf_print_fn);
 
-  obj = bpf_object__open_file(filename, NULL);
+  struct bpf_object *obj = bpf_object__open_file(filename, NULL);
   err = libbpf_get_error(obj);
   if (err) {
     perror("Failed to open BPF elf file");
@@ -86,13 +86,17 @@ int main(int argc, char **argv) {
   assert(tcpmap);
   assert(bpf_map__set_pin_path(tcpmap, TCP_MAP_PATH) == 0);
 
+  struct bpf_map *udpmap = bpf_object__find_map_by_name(obj, "udp_balancing_targets");
+  assert(udpmap);
+  assert(bpf_map__set_pin_path(udpmap, UDP_MAP_PATH) == 0);
+
   if (bpf_object__load(obj) != 0) {
     perror("Error loading BPF object into kernel");
     return 1;
   }
 
-  map_fd = bpf_map__fd(tcpmap);
-  assert(map_fd);
+  tmap_fd = bpf_map__fd(tcpmap);
+  assert(tmap_fd);
 
   struct bpf_program *prog = bpf_object__find_program_by_name(obj, "_selector");
   if (!prog) {
@@ -103,25 +107,40 @@ int main(int argc, char **argv) {
   prog_fd = bpf_program__fd(prog);
   assert(prog_fd);
 
-  sock = open_sock();
-  assert(sock >= 0);
-  assert(listen(sock, 3) == 0);
+  // TCP
+  tsock = open_sock(SOCK_STREAM);
+  assert(tsock >= 0);
+  assert(listen(tsock, 3) == 0);
 
-  if (setsockopt(sock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd,
+  if (setsockopt(tsock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd,
                  sizeof(prog_fd)) != 0) {
     perror("Could not attach BPF prog");
     return 1;
   }
 
-  printf("sockfd: %ld\n", sock);
-  if (bpf_map_update_elem(map_fd, &key, &sock, BPF_ANY) != 0) {
+  printf("TCP sockfd: %ld\n", tsock);
+  if (bpf_map_update_elem(tmap_fd, &key, &tsock, BPF_ANY) != 0) {
     perror("Could not update reuseport array");
     return 1;
   }
+  
+  // UDP
+  umap_fd = bpf_map__fd(udpmap);
+  assert(umap_fd);
 
-  uint64_t res;
-  if (bpf_map_lookup_elem(map_fd, &key, &res) != 0) {
-    perror("Could not find own entry in REUSEPORT Array");
+  usock = open_sock(SOCK_DGRAM);
+  assert(usock >= 0);
+
+  if (setsockopt(usock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd,
+                 sizeof(prog_fd)) != 0) {
+    perror("Could not attach BPF prog");
+    return 1;
+  }
+
+  printf("UDP sockfd: %ld\n", usock);
+  if (bpf_map_update_elem(umap_fd, &key, &usock, BPF_ANY) != 0) {
+    perror("Could not update reuseport array");
+    return 1;
   }
 
   char timestamp[] = "2021-01-01 23:59:59";
@@ -133,8 +152,19 @@ int main(int argc, char **argv) {
     printf("\n=== %s ===\n", timestamp);
 
     uint32_t val;
+    printf("TCP map: ");
     for (int i = 0; i < BALANCER_COUNT; i++) {
-      if (bpf_map_lookup_elem(map_fd, &i, &val) == 0) {
+      if (bpf_map_lookup_elem(tmap_fd, &i, &val) == 0) {
+        printf("%i: %i, ", i, val);
+      } else {
+        printf("%i: X, ", i);
+      }
+    }
+    puts("");
+    
+    printf("UDP map: ");
+    for (int i = 0; i < BALANCER_COUNT; i++) {
+      if (bpf_map_lookup_elem(umap_fd, &i, &val) == 0) {
         printf("%i: %i, ", i, val);
       } else {
         printf("%i: X, ", i);
@@ -144,7 +174,8 @@ int main(int argc, char **argv) {
 
     struct sockaddr_in saddr;
     socklen_t len = sizeof(struct sockaddr_in);
-    int s = accept(sock, &saddr, &len);
+
+    int s = accept(tsock, &saddr, &len);
     if (s < 0) {
       perror("Did not accept()");
     } else {
@@ -152,6 +183,14 @@ int main(int argc, char **argv) {
       printf("Accepted connection from %s:%d\n", ip, ntohs(saddr.sin_port));
       if (close(s) != 0)
         perror("Error closing connection");
+    }
+
+    ssize_t l = recvfrom(usock, NULL, 0, 0, &saddr, &len);
+    if (l < 0) {
+      perror("No datagrams received");
+    } else {
+      char *ip = inet_ntoa(saddr.sin_addr);
+      printf("Accepted datagrams from %s:%d\n", ip, ntohs(saddr.sin_port));
     }
 
     sleep(2);
