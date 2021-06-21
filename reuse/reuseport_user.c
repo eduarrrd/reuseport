@@ -7,6 +7,7 @@
 #include <linux/bpf.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
 
 #include <errno.h>
 #include <linux/unistd.h>
@@ -123,7 +124,14 @@ int main(int argc, char **argv) {
     perror("Could not find own entry in REUSEPORT Array");
   }
 
+  char timestamp[] = "2021-01-01 23:59:59";
+
   while (true) {
+    time_t ltime = time(NULL);
+    struct tm *lt = localtime(&ltime);
+    strftime(timestamp, sizeof(timestamp), "%F %H:%M:%S", lt);
+    printf("\n=== %s ===\n", timestamp);
+
     uint32_t val;
     for (int i = 0; i < BALANCER_COUNT; i++) {
       if (bpf_map_lookup_elem(map_fd, &i, &val) == 0) {
