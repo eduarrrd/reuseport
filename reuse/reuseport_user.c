@@ -64,9 +64,11 @@ int main(int argc, char **argv) {
     key = atoi(argv[1]);
   }
 
-	libbpf_set_print(libbpf_print_fn);
+  libbpf_set_print(libbpf_print_fn);
 
-  struct bpf_object *obj = bpf_object__open_file(filename, NULL);
+  struct bpf_object_open_opts opts = {.sz = sizeof(struct bpf_object_open_opts),
+                                      .pin_root_path = "/sys/fs/bpf/reuseport"};
+  struct bpf_object *obj = bpf_object__open_file(filename, &opts);
   err = libbpf_get_error(obj);
   if (err) {
     perror("Failed to open BPF elf file");
@@ -112,7 +114,7 @@ int main(int argc, char **argv) {
     perror("Could not update reuseport array");
     return 1;
   }
-  
+
   // UDP
   umap_fd = bpf_map__fd(udpmap);
   assert(umap_fd);
@@ -150,7 +152,7 @@ int main(int argc, char **argv) {
       }
     }
     puts("");
-    
+
     printf("UDP map: ");
     for (int i = 0; i < BALANCER_COUNT; i++) {
       if (bpf_map_lookup_elem(umap_fd, &i, &val) == 0) {
