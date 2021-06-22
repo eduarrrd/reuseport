@@ -19,6 +19,7 @@ struct {
   __type(key, u32);
   __type(value, u32);
   __uint(max_entries, 1);
+  __uint(pinning, LIBBPF_PIN_BY_NAME);
 } nonce SEC(".maps");
 
 struct {
@@ -26,6 +27,7 @@ struct {
   __type(key, u32);
   __type(value, u64);
   __uint(max_entries, BALANCER_COUNT);
+  __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tcp_balancing_targets SEC(".maps");
 
 struct {
@@ -33,6 +35,7 @@ struct {
   __type(key, u32);
   __type(value, u64);
   __uint(max_entries, BALANCER_COUNT);
+  __uint(pinning, LIBBPF_PIN_BY_NAME);
 } udp_balancing_targets SEC(".maps");
 
 // HASHING
