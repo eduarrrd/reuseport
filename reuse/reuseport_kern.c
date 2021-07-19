@@ -1,8 +1,9 @@
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 
-#ifndef BALANCER_COUNT
-#define BALANCER_COUNT 2
+#ifndef MAX_BALANCER_COUNT
+// Keep in sync with _user.c
+#define MAX_BALANCER_COUNT 128
 #endif
 
 // bpf_printk argument limits
@@ -11,6 +12,7 @@
 #define LOC __FILE__ ":" STRINGIFY(__LINE__) ": "
 
 const u32 zero = 0; // array access index
+const u32 balancer_max = MAX_BALANCER_COUNT;
 
 // MAPS
 
@@ -23,10 +25,18 @@ struct {
 } nonce SEC(".maps");
 
 struct {
+  __uint(type, BPF_MAP_TYPE_ARRAY);
+  __type(key, u32);
+  __type(value, u32);
+  __uint(max_entries, 1);
+  __uint(pinning, LIBBPF_PIN_BY_NAME);
+} size SEC(".maps");
+
+struct {
   __uint(type, BPF_MAP_TYPE_REUSEPORT_SOCKARRAY);
   __type(key, u32);
   __type(value, u64);
-  __uint(max_entries, BALANCER_COUNT);
+  __uint(max_entries, MAX_BALANCER_COUNT);
   __uint(pinning, LIBBPF_PIN_BY_NAME);
 } tcp_balancing_targets SEC(".maps");
 
@@ -34,7 +44,7 @@ struct {
   __uint(type, BPF_MAP_TYPE_REUSEPORT_SOCKARRAY);
   __type(key, u32);
   __type(value, u64);
-  __uint(max_entries, BALANCER_COUNT);
+  __uint(max_entries, MAX_BALANCER_COUNT);
   __uint(pinning, LIBBPF_PIN_BY_NAME);
 } udp_balancing_targets SEC(".maps");
 
@@ -123,7 +133,14 @@ enum sk_action _selector(struct sk_reuseport_md *reuse) {
 #endif
   bpf_skb_load_bytes_relative(reuse, 0, &ip, sizeof(struct iphdr),
                               (u32)BPF_HDR_START_NET);
-  key = hash(__builtin_bswap32(ip.saddr)) % BALANCER_COUNT;
+
+  const u32 *balancer_count = bpf_map_lookup_elem(&size, &zero);
+  if (!balancer_count || *balancer_count == 0) { // uninitialized by userspace
+    balancer_count = &balancer_max;
+    bpf_map_update_elem(&size, &zero, balancer_count, BPF_ANY);
+  }
+
+  key = hash(__builtin_bswap32(ip.saddr)) % *balancer_count;
   bpf_printk(LOC "src: %d, dest: %d, key: %d", __builtin_bswap32(ip.saddr),
              __builtin_bswap32(ip.daddr), key);
 

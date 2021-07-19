@@ -13,8 +13,9 @@
 #include <linux/unistd.h>
 #include <stdlib.h>
 
-#ifndef BALANCER_COUNT
-#define BALANCER_COUNT 2
+#ifndef MAX_BALANCER_COUNT
+// Keep in sync with _kern.c
+#define MAX_BALANCER_COUNT 128
 #endif
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args) {
@@ -52,17 +53,20 @@ static inline int open_sock(int type) {
 }
 
 int main(int argc, char **argv) {
-  int tmap_fd, umap_fd, prog_fd;
+  int tmap_fd, umap_fd, size_map_fd, prog_fd;
   char filename[] = "libreuseport.a.p/reuseport_kern.c.o";
   int64_t tsock, usock;
   long err = 0;
 
   // 0-based index into reuseport array (i.e hash bucket) as the only arg
-  // range: [0, BALANCER_COUNT)
-  uint32_t key = 0;
-  if (argc > 1) {
-    key = atoi(argv[1]);
-  }
+  // range: [0, MAX_BALANCER_COUNT)
+  uint32_t key = 0, balancer_count = 0;
+  if (argc > 1) sscanf(argv[1], "%u/%u", &key, &balancer_count);
+  assert(!balancer_count || key < balancer_count);
+  assert(balancer_count <= MAX_BALANCER_COUNT);
+  printf("from args: Using hash bucket index %u", key);
+  if (balancer_count > 0) printf(" (%u buckets in total)", balancer_count);
+  puts("");
 
   libbpf_set_print(libbpf_print_fn);
 
@@ -134,6 +138,30 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // Determine intended number of hash buckets
+  // Assumption: static during lifetime of this process
+  struct bpf_map *size_map = bpf_object__find_map_by_name(obj, "size");
+  assert(size_map);
+  size_map_fd = bpf_map__fd(size_map);
+  assert(size_map_fd);
+
+  uint32_t index = 0;
+  if (balancer_count == 0) {  // no user-supplied limit
+    bpf_map_lookup_elem(size_map_fd, &index, &balancer_count);
+    if (balancer_count == 0) {  // BPF program hasn't run yet to initalize this
+      balancer_count = MAX_BALANCER_COUNT;
+      if (bpf_map_update_elem(size_map_fd, &index, &balancer_count, BPF_ANY) != 0) {
+        perror("Could not update balancer count");
+        return 1;
+      }
+    }
+  } else {  // Overwrite global count with user supplied one
+    if (bpf_map_update_elem(size_map_fd, &index, &balancer_count, BPF_ANY) != 0) {
+      perror("Could not update balancer count");
+      return 1;
+    }
+  }
+
   char timestamp[] = "2021-01-01 23:59:59";
 
   while (true) {
@@ -144,7 +172,7 @@ int main(int argc, char **argv) {
 
     uint32_t val;
     printf("TCP map: ");
-    for (int i = 0; i < BALANCER_COUNT; i++) {
+    for (int i = 0; i < balancer_count; i++) {
       if (bpf_map_lookup_elem(tmap_fd, &i, &val) == 0) {
         printf("%i: %i, ", i, val);
       } else {
@@ -154,7 +182,7 @@ int main(int argc, char **argv) {
     puts("");
 
     printf("UDP map: ");
-    for (int i = 0; i < BALANCER_COUNT; i++) {
+    for (int i = 0; i < balancer_count; i++) {
       if (bpf_map_lookup_elem(umap_fd, &i, &val) == 0) {
         printf("%i: %i, ", i, val);
       } else {
