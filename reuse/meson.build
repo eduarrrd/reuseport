@@ -42,7 +42,7 @@ vmlinux = custom_target(
     capture : true
 )
 
-libbpf_dep = dependency('libbpf')
+libbpf_dep = dependency('libbpf', version : '>=0.4.0')
 bpf_args = [
     '-g',  # BTF instrumentation
     '-O2', # required for libbpf
