@@ -4,14 +4,13 @@
 #include <assert.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+#include <errno.h>
 #include <linux/bpf.h>
+#include <linux/unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
-
-#include <errno.h>
-#include <linux/unistd.h>
-#include <stdlib.h>
 
 #ifndef MAX_BALANCER_COUNT
 // Keep in sync with _kern.c
@@ -42,7 +41,7 @@ static inline int open_sock(int type) {
   memset(&sa, 0, sizeof(sa));
   sa.sin_family = AF_INET;
   sa.sin_addr.s_addr = INADDR_ANY;
-  sa.sin_port = htons(9999); // TODO: to cmd arg
+  sa.sin_port = htons(9999);  // TODO: to cmd arg
   if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
     printf("bind to %d: %s\n", sa.sin_port, strerror(errno));
     close(sock);
@@ -107,8 +106,7 @@ int main(int argc, char **argv) {
   assert(tsock >= 0);
   assert(listen(tsock, 3) == 0);
 
-  if (setsockopt(tsock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd,
-                 sizeof(prog_fd)) != 0) {
+  if (setsockopt(tsock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd, sizeof(prog_fd)) != 0) {
     perror("Could not attach BPF prog");
     return 1;
   }
@@ -126,8 +124,7 @@ int main(int argc, char **argv) {
   usock = open_sock(SOCK_DGRAM);
   assert(usock >= 0);
 
-  if (setsockopt(usock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd,
-                 sizeof(prog_fd)) != 0) {
+  if (setsockopt(usock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF, &prog_fd, sizeof(prog_fd)) != 0) {
     perror("Could not attach BPF prog");
     return 1;
   }
@@ -176,7 +173,7 @@ int main(int argc, char **argv) {
       if (bpf_map_lookup_elem(tmap_fd, &i, &val) == 0) {
         printf("%i: %i, ", i, val);
       } else {
-        printf("%i: X, ", i);
+        printf("%i: x, ", i);
       }
     }
     puts("");
@@ -186,12 +183,12 @@ int main(int argc, char **argv) {
       if (bpf_map_lookup_elem(umap_fd, &i, &val) == 0) {
         printf("%i: %i, ", i, val);
       } else {
-        printf("%i: X, ", i);
+        printf("%i: x, ", i);
       }
     }
     puts("");
 
-    struct sockaddr_in saddr;
+    struct sockaddr_in saddr = {0};
     socklen_t len = sizeof(struct sockaddr_in);
 
     int s = accept(tsock, &saddr, &len);
@@ -200,8 +197,7 @@ int main(int argc, char **argv) {
     } else {
       char *ip = inet_ntoa(saddr.sin_addr);
       printf("Accepted connection from %s:%d\n", ip, ntohs(saddr.sin_port));
-      if (close(s) != 0)
-        perror("Error closing connection");
+      if (close(s) != 0) perror("Error closing connection");
     }
 
     ssize_t l = recvfrom(usock, NULL, 0, 0, &saddr, &len);
