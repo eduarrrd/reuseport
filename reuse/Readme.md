@@ -6,7 +6,8 @@ Requires
 
 * meson
 * clang
-* libbpf
+* libbpf >= 0.4.0
+* Kernel sources
 
 To create a build run
 
@@ -14,6 +15,16 @@ To create a build run
 $ CC=clang meson build
 $ cd build/
 build/$ meson compile
+```
+
+### Kernel sources
+
+Linux sources are required. The path can be statically defined in
+`meson_options.txt` or dynamically injected via a CLI option
+(using the CentOS 8 prefix):
+
+```shell
+$ CC=clang meson -Dkheader_prefix="/usr/src/kernels/$(uname -r)/" build
 ```
 
 ## Running
@@ -31,7 +42,7 @@ sudo cat /sys/kernel/debug/tracing/trace_pipe
 Map dump:
 
 ```shell
-/usr/src/linux/tools/bpf/bpftool/bpftool map dump name tcp_balancing_t
+bpftool map dump name tcp_balancing_t
 ```
 
 Trace:
@@ -40,7 +51,9 @@ Trace:
 bpftrace -e 'kfunc:bpf_fd_reuseport_array_update_elem { printf("%p, %p\n", args->key, args->value); print(args->map_flags > BPF_EXIST); }
 ```
 
-## vmlinux.h
+## Aside: vmlinux.h
+
+(Note: meson does this on its own via the `vmlinux` target now.)
 
 Generated via `bpftool dump` mechanism:
 
