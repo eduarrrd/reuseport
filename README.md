@@ -13,7 +13,12 @@ It has its own `Readme.md` file.
 
 ## Usage with pmacct/nfacctd
 
-The github.com/eduarrrd/pmacct repo has the `reuse` branch of pmacct that enables the `bmp` plugin to use the `SK_REUSPORT` BPF program from this repository.
+The https://github.com/eduarrrd/pmacct repo's `reuse` branch enables
+
+1. `nfacctd` itself
+2. the `bmp` plugin
+
+to use the `SK_REUSPORT` BPF program from this repository.
 
 This branch introduces new config options (with example values):
 
